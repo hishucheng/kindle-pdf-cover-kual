@@ -10,7 +10,7 @@
 
 **补全前**——书库里的 PDF 只有空白的灰色图标：
 
-![补全前](screenshots/01-before-no-cover-v2.png)
+![补全前](screenshots/01-before-no-cover-v3.png)
 
 **KUAL 菜单**——PDF 封面助手，一个按钮：
 
