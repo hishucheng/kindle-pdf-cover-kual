@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extension>
+    <information>
+        <name>PDF 封面助手</name>
+        <version>0.3.0</version>
+        <author>闲小爪</author>
+        <id>pdf-cover-helper</id>
+    </information>
+    <menus>
+        <menu type="json" dynamic="true">menu.json</menu>
+    </menus>
+</extension>

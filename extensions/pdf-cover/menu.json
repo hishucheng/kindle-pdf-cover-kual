@@ -1,0 +1,37 @@
+{
+  "items": [
+    {
+      "name": "PDF 封面助手",
+      "priority": 40,
+      "items": [
+        {
+          "name": "扫描并补封面",
+          "priority": 1,
+          "action": "./bin/scan.sh",
+          "exitmenu": true,
+          "status": false
+        },
+        {
+          "name": "高级工具",
+          "priority": 2,
+          "items": [
+            {
+              "name": "兼容性检查",
+              "priority": 1,
+              "action": "./bin/check.sh",
+              "exitmenu": true,
+              "status": false
+            },
+            {
+              "name": "备份书库数据库",
+              "priority": 2,
+              "action": "./bin/backup.sh",
+              "exitmenu": true,
+              "status": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
