@@ -11,5 +11,9 @@ fi
 export PDF_COVER_RUNTIME="$RT_DIR"
 export PDF_COVER_MUPDF_H="$RT_HEADER"
 export LD_LIBRARY_PATH="$RT_DIR/libs${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+renderer="$BASE/bin/render_pdf_cover.lua"
+if [ "$5" = "rgb" ]; then
+    renderer="$BASE/bin/render_pdf_cover_rgb.lua"
+fi
 cd "$RT_DIR" || exit 1
-exec ./luajit "$BASE/bin/render_pdf_cover.lua" "$@"
+exec ./luajit "$renderer" "$1" "$2" "$3" "$4"

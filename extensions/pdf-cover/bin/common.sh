@@ -8,6 +8,7 @@ BACKUPS="$DATA/backups"
 LOG="$DATA/pdf-cover.log"
 STATUS="$DATA/last-status.txt"
 LOCK=/tmp/pdf-cover-helper.lock
+LEGACY_PDF_MIME="application/x-mobipocket-ebook"
 
 mkdir -p "$DATA" "$BACKUPS" 2>/dev/null || true
 
@@ -37,6 +38,40 @@ set_status() {
     printf '%s\n' "$1" > "$STATUS"
     log "$1"
     display_result "$1"
+}
+
+# Kindle 7 的最终固件使用一套旧 Java Home。该版本的 CoverRenderer
+# 会在读取到 application/pdf 时无条件丢弃 p_thumbnail，显示文字占位卡。
+# 设备代码反汇编与实机验证均确认：只对本地条目使用兼容 MIME 后，
+# 封面可显示，PDF 仍由原阅读器正常打开。
+detect_cover_compat_mode() {
+    LEGACY_PDF_COVER=0
+    # 显式强制（K7 迁移入口 k7-finalize.sh 设置）：不依赖固件文件探测。
+    if [ "$PDF_COVER_FORCE_LEGACY" = "1" ]; then
+        LEGACY_PDF_COVER=1
+        return 0
+    fi
+    # Kindle 7 (KT2, juno_120202) 固件串位于 /etc/version.txt；部分固件也写入
+    # /etc/prettyversion.txt。两个都查，避免单文件缺失/内容差异导致漏检。
+    if grep -qs 'juno_120202' /etc/prettyversion.txt 2>/dev/null \
+        || grep -qs 'juno_120202' /etc/version.txt 2>/dev/null; then
+        LEGACY_PDF_COVER=1
+    fi
+    if [ "$LEGACY_PDF_COVER" -eq 1 ]; then
+        log "compat mode: legacy K7 (pdf cover workaround active)"
+    fi
+}
+
+# 旧 Home 会缓存内容 MIME 与磁贴渲染器。数据库事务完成后，通过系统
+# appmgrd 只重启 Home booklet；不重启 framework，也不触碰 ccat。
+# 延迟执行可确保 KUAL 动作脚本已退出、文件描述符均已关闭。
+reload_legacy_home() {
+    nohup sh -c '
+        sleep 2
+        lipc-set-prop com.lab126.appmgrd stop app://com.lab126.booklet.home >/dev/null 2>&1
+        sleep 1
+        lipc-set-prop com.lab126.appmgrd start app://com.lab126.booklet.home >/dev/null 2>&1
+    ' >/dev/null 2>&1 &
 }
 
 # 选择可用的渲染运行时。优先内置独立运行时(armv7 老机型,不依赖 KOReader);
@@ -82,6 +117,10 @@ check_requirements() {
     [ -x /usr/bin/djpeg ] || missing="$missing djpeg"
     [ -s "$RT_HEADER" ] || missing="$missing 渲染头文件($RT_HEADER)"
     [ -s "$RT_DIR/libs/libwrap-mupdf.so" ] || missing="$missing MuPDF($RT_DIR/libs)"
+    detect_cover_compat_mode
+    if [ "$LEGACY_PDF_COVER" -eq 1 ]; then
+        [ -s "$BASE/bin/render_pdf_cover_rgb.lua" ] || missing="$missing RGB渲染器"
+    fi
     if [ -n "$missing" ]; then
         CHECK_ERROR="缺少:$missing"
         return 1
@@ -112,6 +151,12 @@ make_backup() {
 }
 
 detect_thumbnail_size() {
+    detect_cover_compat_mode
+    if [ "$LEGACY_PDF_COVER" -eq 1 ]; then
+        THUMB_W=168
+        THUMB_H=259
+        return 0
+    fi
     THUMB_W=221
     THUMB_H=315
     candidate=$(sqlite3 "$DB" "select p_thumbnail from entries where p_thumbnail is not null and p_thumbnail<>'' limit 50;" 2>/dev/null |

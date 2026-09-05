@@ -28,6 +28,13 @@
               "action": "./bin/backup.sh",
               "exitmenu": true,
               "status": false
+            },
+            {
+              "name": "恢复 PDF 类型标记",
+              "priority": 3,
+              "action": "./bin/restore-pdf-mime.sh",
+              "exitmenu": true,
+              "status": false
             }
           ]
         }
