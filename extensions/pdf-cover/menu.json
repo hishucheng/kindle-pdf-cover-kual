@@ -32,7 +32,8 @@
             {
               "name": "强制重建全部封面",
               "priority": 3,
-              "action": "./bin/scan.sh --force",
+              "action": "./bin/scan.sh",
+              "params": "--force",
               "exitmenu": true,
               "status": false
             },
