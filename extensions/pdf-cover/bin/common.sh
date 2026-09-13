@@ -9,6 +9,7 @@ LOG="$DATA/pdf-cover.log"
 STATUS="$DATA/last-status.txt"
 LOCK=/tmp/pdf-cover-helper.lock
 LEGACY_PDF_MIME="application/x-mobipocket-ebook"
+BACKUP_KEEP=10
 
 mkdir -p "$DATA" "$BACKUPS" 2>/dev/null || true
 
@@ -137,6 +138,15 @@ check_requirements() {
     return 0
 }
 
+prune_backups() {
+    # 备份文件名自带 YYYYMMDD-HHMMSS，ls -t 也能稳定得到新到旧顺序。
+    # 目录路径固定且不含空格；只清理由本插件创建的 cc.db.<timestamp> 文件。
+    old_backups=$(ls -1t "$BACKUPS"/cc.db.[0-9]* 2>/dev/null | sed -n "$((BACKUP_KEEP + 1)),\$p")
+    for old in $old_backups; do
+        rm -f "$old" 2>/dev/null || true
+    done
+}
+
 make_backup() {
     stamp=$(date '+%Y%m%d-%H%M%S')
     target="$BACKUPS/cc.db.$stamp"
@@ -144,6 +154,7 @@ make_backup() {
         mv "$target.tmp" "$target"
         chmod 664 "$target" 2>/dev/null || true
         BACKUP_PATH=$target
+        prune_backups
         return 0
     fi
     rm -f "$target.tmp"

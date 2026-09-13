@@ -30,8 +30,16 @@
               "status": false
             },
             {
-              "name": "恢复 PDF 类型标记",
+              "name": "强制重建全部封面",
               "priority": 3,
+              "action": "./bin/scan.sh",
+              "params": "--force",
+              "exitmenu": true,
+              "status": false
+            },
+            {
+              "name": "恢复 PDF 类型标记",
+              "priority": 4,
               "action": "./bin/restore-pdf-mime.sh",
               "exitmenu": true,
               "status": false
