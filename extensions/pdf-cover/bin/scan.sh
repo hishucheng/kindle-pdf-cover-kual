@@ -2,6 +2,11 @@
 
 . /mnt/us/extensions/pdf-cover/bin/common.sh
 
+FORCE_REBUILD=0
+if [ "${1:-}" = "--force" ]; then
+    FORCE_REBUILD=1
+fi
+
 if ! mkdir "$LOCK" 2>/dev/null; then
     set_status "已有扫描任务正在运行"
     exit 0
@@ -32,27 +37,29 @@ created=0
 skipped=0
 failed=0
 adjusted=0
+rebuilt=0
 mkdir -p "$THUMBS"
 
 while IFS='|' read -r uuid pdf current mime; do
     [ -n "$uuid" ] || continue
     [ -f "$pdf" ] || continue
     found=$((found + 1))
+
     # 已有有效缩略图时的处理：
-    #   - 非 K7：直接跳过（保持旧行为，兼容逻辑仅用于 K7 旧 Home）。
-    #   - K7 且 MIME 已是兼容值：已达标，跳过。
-    #   - K7 但 MIME 仍是 application/pdf：旧 CoverRenderer 会无条件丢弃
-    #     p_thumbnail，只改 MIME 不够，需整行重渲染 RGB 并伪装 MIME。
+    #   - 普通扫描：非 K7 直接跳过；K7 仅在 MIME 仍不兼容时重渲染并修正。
+    #   - --force：不跳过已有封面，全部重新从 PDF 第一页生成。
     skip_row=0
+    had_current=0
+    repair_row=0
     if [ -n "$current" ] && [ -s "$current" ]; then
-        if [ "$LEGACY_PDF_COVER" -eq 1 ]; then
-            if [ "$mime" = "$LEGACY_PDF_MIME" ]; then
-                skip_row=1
-            else
-                log "legacy re-render needed (mime=$mime): $pdf"
-            fi
-        else
+        had_current=1
+        if [ "$LEGACY_PDF_COVER" -eq 1 ] && [ "$mime" != "$LEGACY_PDF_MIME" ]; then
+            repair_row=1
+            log "legacy re-render needed (mime=$mime): $pdf"
+        elif [ "$FORCE_REBUILD" -eq 0 ]; then
             skip_row=1
+        else
+            log "forced rebuild: $pdf"
         fi
     fi
     if [ "$skip_row" -eq 1 ]; then
@@ -94,8 +101,16 @@ while IFS='|' read -r uuid pdf current mime; do
     target_mime=application/pdf
     if [ "$LEGACY_PDF_COVER" -eq 1 ]; then target_mime=$LEGACY_PDF_MIME; fi
     if sqlite3 "$DB" ".timeout 5000" "BEGIN IMMEDIATE; UPDATE entries SET p_thumbnail='$thumb', p_mimeType='$target_mime' WHERE p_uuid='$uuid'; COMMIT;" >>"$LOG" 2>&1; then
-        created=$((created + 1))
-        log "cover installed: $pdf -> $thumb"
+        if [ "$repair_row" -eq 1 ]; then
+            adjusted=$((adjusted + 1))
+            log "cover repaired: $pdf -> $thumb"
+        elif [ "$FORCE_REBUILD" -eq 1 ] && [ "$had_current" -eq 1 ]; then
+            rebuilt=$((rebuilt + 1))
+            log "cover rebuilt: $pdf -> $thumb"
+        else
+            created=$((created + 1))
+            log "cover installed: $pdf -> $thumb"
+        fi
     else
         rm -f "$thumb"
         failed=$((failed + 1))
@@ -104,14 +119,24 @@ while IFS='|' read -r uuid pdf current mime; do
 done < "$query"
 rm -f "$query"
 
+changes=$((created + adjusted + rebuilt))
 if [ "$LEGACY_PDF_COVER" -eq 1 ]; then
     lipc-set-prop com.lab126.coverArtService refreshCoverArt 1 >/dev/null 2>&1 || true
-    if [ "$created" -gt 0 ] || [ "$adjusted" -gt 0 ]; then
+    if [ "$FORCE_REBUILD" -eq 1 ]; then
+        if [ "$changes" -gt 0 ]; then
+            set_status "K7 REBUILD: PDF $found NEW $created FIX $adjusted REDO $rebuilt FAIL $failed - HOME RELOAD"
+            reload_legacy_home
+        else
+            set_status "K7 REBUILD: PDF $found NEW 0 FIX 0 REDO 0 FAIL $failed"
+        fi
+    elif [ "$changes" -gt 0 ]; then
         set_status "K7 COVERS: PDF $found NEW $created FIX $adjusted FAIL $failed - HOME RELOAD"
         reload_legacy_home
     else
         set_status "K7 COVERS: PDF $found NEW 0 FIX 0 FAIL $failed"
     fi
+elif [ "$FORCE_REBUILD" -eq 1 ]; then
+    set_status "重建完成：PDF $found，新建 $created，重建 $rebuilt，失败 $failed"
 else
     set_status "扫描完成：PDF $found，本次新增 $created，已有 $skipped，失败 $failed"
 fi
