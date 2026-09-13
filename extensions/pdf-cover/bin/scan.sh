@@ -85,6 +85,7 @@ while IFS='|' read -r uuid pdf current mime; do
         cjpeg_mode=-grayscale
     fi
     jpg="${thumb}.tmp"
+    old_thumb_backup=""
     rm -f "$bmp" "$jpg"
 
     if ! "$BASE/bin/render.sh" "$pdf" "$bmp" "$THUMB_W" "$THUMB_H" "$render_mode" >>"$LOG" 2>&1 ||
@@ -96,11 +97,29 @@ while IFS='|' read -r uuid pdf current mime; do
     fi
     rm -f "$bmp"
     chmod 664 "$jpg" 2>/dev/null || true
-    mv "$jpg" "$thumb"
+
+    # 强制重建/兼容修复时，现有封面可能正好就是目标路径。
+    # 先留一份临时副本；若后续写库失败，恢复旧图，避免留下失效的 p_thumbnail。
+    if [ "$had_current" -eq 1 ] && [ "$current" = "$thumb" ] && [ -s "$thumb" ]; then
+        old_thumb_backup="${thumb}.bak.$$"
+        if ! cp "$thumb" "$old_thumb_backup" 2>>"$LOG"; then
+            rm -f "$jpg"
+            failed=$((failed + 1))
+            log "thumbnail backup failed: $thumb"
+            continue
+        fi
+    fi
+    if ! mv "$jpg" "$thumb" 2>>"$LOG"; then
+        rm -f "$jpg" "$old_thumb_backup"
+        failed=$((failed + 1))
+        log "thumbnail install failed: $thumb"
+        continue
+    fi
 
     target_mime=application/pdf
     if [ "$LEGACY_PDF_COVER" -eq 1 ]; then target_mime=$LEGACY_PDF_MIME; fi
     if sqlite3 "$DB" ".timeout 5000" "BEGIN IMMEDIATE; UPDATE entries SET p_thumbnail='$thumb', p_mimeType='$target_mime' WHERE p_uuid='$uuid'; COMMIT;" >>"$LOG" 2>&1; then
+        rm -f "$old_thumb_backup"
         if [ "$repair_row" -eq 1 ]; then
             adjusted=$((adjusted + 1))
             log "cover repaired: $pdf -> $thumb"
@@ -112,7 +131,11 @@ while IFS='|' read -r uuid pdf current mime; do
             log "cover installed: $pdf -> $thumb"
         fi
     else
-        rm -f "$thumb"
+        if [ -n "$old_thumb_backup" ] && [ -s "$old_thumb_backup" ]; then
+            mv "$old_thumb_backup" "$thumb" 2>/dev/null || true
+        else
+            rm -f "$thumb"
+        fi
         failed=$((failed + 1))
         log "database update failed: $pdf"
     fi
